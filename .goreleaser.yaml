@@ -1,0 +1,93 @@
+version: 2
+
+# Release build for deslop-hook, run by .github/workflows/release.yml when a
+# v* tag is pushed. It publishes:
+#   - a GitHub Release with an archive per platform, checksums.txt and the
+#     install scripts (the workflow adds build-provenance attestations);
+#   - the Homebrew cask in productmind-code/homebrew-tap (stable tags only).
+# The npm packages are published afterwards by scripts/npm-publish.mjs, from
+# the binaries this leaves in dist/.
+#
+# Local dry run: goreleaser release --snapshot --clean
+
+builds:
+  - id: deslop-hook
+    main: ./cmd/deslop-hook
+    binary: deslop-hook
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    # Reproducible builds: file times come from the commit, not the clock.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: deslop-hook
+    ids: [deslop-hook]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "deslop-hook_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - THIRD_PARTY_NOTICES.md
+
+checksum:
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: deslop-hook
+    ids: [deslop-hook]
+    repository:
+      owner: productmind-code
+      name: homebrew-tap
+      # A fine-grained token with contents:write on homebrew-tap only, held
+      # by the `release` environment. Never the org-wide token.
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/productmind-code/deslop-hook
+    description: Git pre-commit hook that removes AI-slop Unicode from staged changes
+    license: MIT
+    binaries: [deslop-hook]
+    # Release candidates (v0.1.0-rc.1) go to GitHub only, not to the tap.
+    skip_upload: auto
+    commit_author:
+      name: productmind-bot
+      email: git@productmind.ai
+    # Homebrew quarantines cask downloads, and the binary is only ad-hoc
+    # signed by the Go linker, so the first run would trip Gatekeeper.
+    # Remove this once releases are signed and notarized.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/deslop-hook"]
+          end
+
+release:
+  github:
+    owner: productmind-code
+    name: deslop-hook
+  prerelease: auto
+  # Attached so docs can link an installer pinned to a release.
+  extra_files:
+    - glob: ./scripts/install.sh
+    - glob: ./scripts/install.ps1
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^test:"

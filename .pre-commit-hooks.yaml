@@ -1,0 +1,28 @@
+# For the pre-commit framework (https://pre-commit.com):
+#
+#   - repo: https://github.com/productmind-code/deslop-hook
+#     rev: v0.1.0
+#     hooks:
+#       - id: deslop-hook
+#
+# pre-commit builds the binary with Go (and installs Go itself if needed).
+# Under pre-commit, deslop-hook cleans the working tree only: pre-commit then
+# reports "files were modified by this hook" and you `git add` and commit
+# again, like with any formatter. It still only touches the lines you staged.
+- id: deslop-hook
+  name: deslop-hook
+  description: Remove AI-slop Unicode (em dashes, curly quotes, zero-width and bidi characters) from staged lines
+  entry: deslop-hook fix --staged-lines
+  language: golang
+  types: [text]
+  require_serial: true
+  minimum_pre_commit_version: "3.2.0"
+
+- id: deslop-hook-check
+  name: deslop-hook (check only)
+  description: Fail when staged lines contain AI-slop Unicode, without changing anything
+  entry: deslop-hook check --staged
+  language: golang
+  pass_filenames: false
+  require_serial: true
+  minimum_pre_commit_version: "3.2.0"

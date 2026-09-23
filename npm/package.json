@@ -1,0 +1,38 @@
+{
+  "name": "@productmind/deslop-hook",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A git pre-commit hook that removes the Unicode characters language models leave in code and docs: em dashes, curly quotes, ellipses, non-breaking and zero-width spaces, bidi controls, arrows. It rewrites only the lines you are committing, in both the commit and your working tree, and gets out of the way.",
+  "keywords": [
+    "deslop",
+    "hook",
+    "ai",
+    "git",
+    "pre-commit",
+    "unicode",
+    "llm",
+    "lint",
+    "em-dash"
+  ],
+  "homepage": "https://github.com/productmind-code/deslop-hook#readme",
+  "bugs": {
+    "url": "https://github.com/productmind-code/deslop-hook/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/productmind-code/deslop-hook.git"
+  },
+  "license": "MIT",
+  "author": "Productmind",
+  "bin": {
+    "deslop-hook": "bin/deslop-hook.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
