@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -550,10 +551,14 @@ func TestMissingBinaryFailsOpen(t *testing.T) {
 	r.install()
 	hookPath := filepath.Join(r.dir, ".git", "hooks", "pre-commit")
 	data, _ := os.ReadFile(hookPath)
-	// The hook records the binary with forward slashes on Windows.
-	hookText := strings.Replace(string(data), filepath.ToSlash(binDir), "/nonexistent", 1)
-	hookText = strings.Replace(hookText, binDir, "/nonexistent", 1)
-	os.WriteFile(hookPath, []byte(hookText), 0o755)
+	// Point the recorded binary somewhere that does not exist. Replace the
+	// quoted path itself: on Windows it is the long form of the temp dir,
+	// while binDir may be the 8.3 short form (C:\Users\RUNNER~1\...).
+	recorded := regexp.MustCompile(`for deslop_hook_try in '[^']*'`)
+	if !recorded.Match(data) {
+		t.Fatalf("no recorded binary in the hook:\n%s", data)
+	}
+	os.WriteFile(hookPath, recorded.ReplaceAll(data, []byte("for deslop_hook_try in '/nonexistent/deslop-hook'")), 0o755)
 
 	r.write("a.txt", "a\nb"+em+"c\n")
 	r.git("add", ".")
