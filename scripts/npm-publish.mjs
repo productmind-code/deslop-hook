@@ -13,9 +13,12 @@
 // npm/ fails instead of shipping a launcher without binaries; the copy
 // published here drops that flag and takes its version from the release tag.
 //
-// Platform packages go first so the main package never points at a version
-// that does not exist yet. A package whose version is already on the registry
-// is skipped, so a failed run can simply be re-run.
+// Platform packages go first, and the main package is published only once
+// every one of them is visible: the registry processes publishes
+// asynchronously, sometimes minutes late and out of order, and the main
+// package pins them exactly. A version already on the registry is skipped,
+// including one an earlier attempt published that is not visible yet, so a
+// failed run can simply be re-run.
 //
 // Usage: node scripts/npm-publish.mjs [--dry-run] [dist]
 //   --dry-run  build and `npm pack` every package, publish nothing
@@ -23,7 +26,7 @@
 // GoReleaser's own npm publisher is a Pro feature and relies on a postinstall
 // download, which Bun does not run for dependencies; hence this script.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -58,16 +61,40 @@ const work = mkdtempSync(join(tmpdir(), "deslop-hook-npm-"));
 const readme = readFileSync(join(root, "README.md"), "utf8");
 const license = readFileSync(join(root, "LICENSE"), "utf8");
 
+// Runs npm, passing its stderr (notices, errors) through to the log while
+// keeping a copy for callers that need to inspect a failure.
 function npm(cwd, ...argv) {
-  return execFileSync("npm", argv, { cwd, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" });
+  const r = spawnSync("npm", argv, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  process.stderr.write(r.stderr ?? "");
+  if (r.error) throw r.error;
+  if (r.status !== 0) {
+    throw Object.assign(new Error(`npm ${argv.join(" ")} failed with exit code ${r.status}`), { stderr: r.stderr ?? "" });
+  }
+  return r.stdout;
 }
 
 function published(name) {
   try {
-    execFileSync("npm", ["view", `${name}@${version}`, "version"], { stdio: ["ignore", "pipe", "ignore"] });
+    execFileSync("npm", ["view", `${name}@${version}`, "version", "--prefer-online"], { stdio: ["ignore", "pipe", "ignore"] });
     return true;
   } catch {
     return false;
+  }
+}
+
+// The registry processes publishes asynchronously and not always in order: a
+// version can take minutes to show up. Waiting for every platform package
+// before publishing the main one means nobody installs a main package whose
+// pinned binary package cannot be fetched yet.
+function waitUntilVisible(name) {
+  if (dryRun) return;
+  const deadline = Date.now() + 30 * 60 * 1000;
+  while (!published(name)) {
+    if (Date.now() > deadline) {
+      throw new Error(`${name}@${version} is still not visible on the registry after 30 minutes`);
+    }
+    console.log(`waiting for ${name}@${version} to become visible...`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
   }
 }
 
@@ -83,7 +110,16 @@ function publish(dir, name) {
     return;
   }
   // Scoped packages are private by default on npm; these are public.
-  npm(dir, "publish", "--access", "public", "--provenance", "--tag", distTag);
+  try {
+    npm(dir, "publish", "--access", "public", "--provenance", "--tag", distTag);
+  } catch (e) {
+    // Published by an earlier attempt but not visible yet (see above).
+    if (/cannot publish over the previously published version/i.test(e.stderr ?? "")) {
+      console.log(`${name}@${version} was already published, skipping`);
+      return;
+    }
+    throw e;
+  }
   console.log(`published ${name}@${version}`);
 }
 
@@ -120,6 +156,10 @@ for (const a of artifacts) {
   }, null, 2) + "\n");
   publish(dir, name);
   optionalDependencies[name] = version;
+}
+
+for (const name of Object.keys(optionalDependencies)) {
+  waitUntilVisible(name);
 }
 
 const main = join(work, "main");
