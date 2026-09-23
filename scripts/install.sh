@@ -116,12 +116,18 @@ actual=$(cd "$TMPDIR_INSTALL" && $sha_cmd "$ARCHIVE" | awk '{print $1}')
   die "checksum mismatch for $ARCHIVE (expected $expected, got $actual)"
 printf 'Checksum verified.\n'
 
-# Build provenance, when the GitHub CLI is available. The checksum above
-# proves the download matches the release; this proves the release was built
-# by this repository's release workflow.
-if [ "${DESLOP_HOOK_SKIP_ATTESTATION:-0}" != "1" ] && command -v gh >/dev/null 2>&1 &&
-  gh auth status >/dev/null 2>&1; then
-  if gh attestation verify "$TMPDIR_INSTALL/$ARCHIVE" -R "$REPO" >/dev/null 2>&1; then
+# Build provenance, when a GitHub CLI that can check it is available. The
+# checksum above proves the download matches the release; this proves the
+# release was built by this repository's release workflow. Only a check that
+# runs and fails stops the install: a gh without the attestation command
+# (before 2.49, e.g. some distribution packages) or not logged in just skips it.
+if [ "${DESLOP_HOOK_SKIP_ATTESTATION:-0}" != "1" ] && command -v gh >/dev/null 2>&1; then
+  if ! gh attestation verify --help >/dev/null 2>&1; then
+    printf 'Note: build provenance not checked (gh %s has no attestation command; 2.49+ does).\n' \
+      "$(gh --version 2>/dev/null | awk 'NR==1{print $3}')"
+  elif ! gh auth status >/dev/null 2>&1; then
+    printf 'Note: build provenance not checked (gh is not logged in).\n'
+  elif gh attestation verify "$TMPDIR_INSTALL/$ARCHIVE" -R "$REPO" >/dev/null 2>&1; then
     printf 'Build provenance verified.\n'
   else
     die "build provenance verification FAILED for $ARCHIVE; refusing to install"
