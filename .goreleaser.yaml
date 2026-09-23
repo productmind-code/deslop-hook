@@ -63,11 +63,16 @@ homebrew_casks:
     # Homebrew quarantines cask downloads, and the binary is only ad-hoc
     # signed by the Go linker, so the first run would trip Gatekeeper.
     # Remove this once releases are signed and notarized.
+    #
+    # Check for xattr by file, not by running it: in a cask, system_command
+    # must succeed, so probing a missing /usr/bin/xattr (Linux) aborts the
+    # install. Kernel#system never raises, so a file without the attribute
+    # (brew install --no-quarantine) cannot fail it either.
     hooks:
       post:
         install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/deslop-hook"]
+          if File.exist?("/usr/bin/xattr")
+            system "/usr/bin/xattr", "-dr", "com.apple.quarantine", "#{staged_path}/deslop-hook"
           end
 
 release:
